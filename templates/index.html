@@ -1,96 +1,184 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <title>Knowledge-Based AI Agent</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <title>Smart Health Knowledge Agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: linear-gradient(to right, #e3f2fd, #ffffff);
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+      padding: 30px 40px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #1565c0;
+      margin-bottom: 10px;
+    }
+
+    p.intro {
+      text-align: center;
+      color: #555;
+    }
+
+    .box {
+      background: #f9fbfd;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 15px 0;
+    }
+
+    input {
+      padding: 8px;
+      width: 65%;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    button {
+      background-color: #1565c0;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+
+    button:hover {
+      background-color: #0d47a1;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+      color: #333;
+    }
+
+    li {
+      background: #eef5fb;
+      margin: 5px 0;
+      padding: 5px 10px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .result {
+      background: #e8f5e9;
+      padding: 15px;
+      border-radius: 8px;
+      color: #2e7d32;
+      font-weight: bold;
+    }
+
+    .probability {
+      background: #fffde7;
+      color: #795548;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    footer {
+      text-align: center;
+      color: gray;
+      margin-top: 20px;
+      font-size: 0.9em;
+    }
+  </style>
 </head>
+
 <body>
   <div class="container">
-    <header>
-      <h1>Knowledge-Based AI Agent</h1>
-      <p class="subtitle">Propositional logic reasoning — simple expert system</p>
-    </header>
+    <h1>Smart Health Knowledge Agent 🤖</h1>
+    <p class="intro">This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>
 
-    <section class="card">
-      <h2>Knowledge Base (Rules)</h2>
-      {% if rules %}
-        <ol>
-          {% for r in rules %}
-            <li><strong>R{{ r.id }}</strong>: If <em>{{ r['if']|join(', ') }}</em> → <strong>{{ r['then'] }}</strong></li>
-          {% endfor %}
-        </ol>
-      {% else %}
-        <p>No rules defined.</p>
-      {% endif %}
+    <div class="box">
+      <h3>🧩 Known Rules</h3>
+      <ul>
+        {% for r in rules %}
+        <li>
+          <span>If {{ r['if']|join(', ') }} → {{ r['then'] }}</span>
+          <form action="{{ url_for('delete_rule', index=loop.index0) }}" method="post" style="display:inline;">
+            <button type="submit">❌ Delete</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
 
-      <form action="{{ url_for('add_rule') }}" method="post" class="inline-form">
-        <input name="conditions" placeholder="Conditions (comma separated)" />
-        <input name="conclusion" placeholder="Conclusion" />
+    <div class="box">
+      <h3>💡 Add a New Rule</h3>
+      <form action="{{ url_for('add_rule') }}" method="post">
+        <input name="conditions" placeholder="If parts (comma separated)">
+        <input name="conclusion" placeholder="Then part">
         <button type="submit">Add Rule</button>
       </form>
-    </section>
+    </div>
 
-    <section class="card">
-      <h2>Known Facts</h2>
-      {% if known_facts %}
-        <p>{{ known_facts|join(', ') }}</p>
-      {% else %}
-        <p>No known facts.</p>
-      {% endif %}
-
-      <form action="{{ url_for('add_fact') }}" method="post" class="inline-form">
-        <input name="fact" placeholder="Add a fact (single)" />
-        <button type="submit">Add Fact</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <h2>Run Inference</h2>
+    <div class="box">
+      <h3>🧠 Ask the AI</h3>
       <form action="{{ url_for('infer') }}" method="post">
-        <input name="facts" placeholder="Enter observed facts (comma separated)" value="{{ input_facts if input_facts is defined else '' }}" />
+        <input name="facts" placeholder="Enter symptoms (comma separated)">
         <button type="submit">Infer</button>
       </form>
+    </div>
 
-      {% if results %}
-        <div class="results">
-          <h3>Results</h3>
-          {% if results.conclusions %}
-            <p class="success">Conclusions:</p>
-            <ul>
-              {% for c in results.conclusions %}
-                <li><strong>{{ c }}</strong></li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="muted">No exact conclusions.</p>
-          {% endif %}
+    {% if results %}
+    {% if results.conclusions %}
+    <div class="result">
+      Possible Condition(s): {{ results.conclusions|join(', ') }}
+    </div>
+    <script>
+      const msg = new SpeechSynthesisUtterance("You may have {{ results.conclusions|join(', ') }}");
+      window.speechSynthesis.speak(msg);
+    </script>
 
-          {% if results.partial %}
-            <h4>Partial Matches</h4>
-            <ul>
-              {% for k, v in results.partial.items() %}
-                <li>{{ k }} — {{ v }}% match</li>
-              {% endfor %}
-            </ul>
-          {% endif %}
+    {% elif results.probabilities %}
+    <div class="probability">
+      <b>No exact match found.</b><br>
+      Here are possible conditions based on similarity:
+      <ul>
+        {% for p in results.probabilities %}
+        <li>{{ p.disease }} — {{ p.prob }}%</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <script>
+      let speechText = "No exact match found. Possible conditions are: ";
+      {% for p in results.probabilities %}
+      speechText += "{{ p.disease }} with {{ p.prob }} percent probability. ";
+      {% endfor %}
+      const msg = new SpeechSynthesisUtterance(speechText);
+      window.speechSynthesis.speak(msg);
+    </script>
 
-          {% if results.explanation %}
-            <h4>Explanation</h4>
-            <ol>
-              {% for s in results.explanation %}
-                <li>{{ s }}</li>
-              {% endfor %}
-            </ol>
-          {% endif %}
-        </div>
-      {% endif %}
-    </section>
+    {% else %}
+    <div class="result">No condition found. Try different symptoms.</div>
+    <script>
+      const msg = new SpeechSynthesisUtterance("No condition found. Try different symptoms.");
+      window.speechSynthesis.speak(msg);
+    </script>
+    {% endif %}
+    {% endif %}
 
-    <footer>
-      <p>Student Project — Knowledge-Based AI Agent (Propositional Logic)</p>
-    </footer>
+    <footer>🩺 Student Project — Simple AI Health Assistant</footer>
   </div>
 </body>
+
 </html>

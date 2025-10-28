@@ -11,13 +11,22 @@ def load_rules():
     if os.path.exists(RULES_FILE):
         with open(RULES_FILE, "r") as f:
             return json.load(f)
-    return [
-        {"if": ["sneezing", "cough", "cold"], "then": "flu"},
-        {"if": ["fever", "body pain"], "then": "viral infection"},
-        {"if": ["headache", "nausea"], "then": "migraine"},
-        {"if": ["rash", "itching"], "then": "allergy"},
-        {"if": ["tiredness", "weakness"], "then": "fatigue"}
-    ]
+    return [{
+        "if": ["sneezing", "cough", "cold"],
+        "then": "flu"
+    }, {
+        "if": ["fever", "body pain"],
+        "then": "viral infection"
+    }, {
+        "if": ["headache", "nausea"],
+        "then": "migraine"
+    }, {
+        "if": ["rash", "itching"],
+        "then": "allergy"
+    }, {
+        "if": ["tiredness", "weakness"],
+        "then": "fatigue"
+    }]
 
 
 def save_rules(rules):
@@ -28,6 +37,28 @@ def save_rules(rules):
 def clean_text(text):
     """Allow only letters and spaces"""
     return re.sub(r'[^a-zA-Z\s,]', '', text).strip()
+
+
+def is_valid_input_term(term):
+    """
+    Stricter validation to reject 'rubbish' like 'dd' or 'nnn'.
+    Requires a minimum length and rejects patterns with too many repeating characters.
+    """
+    cleaned_term_alpha = term.replace(" ", "")
+
+    # 1. Must be purely alphabetic
+    if not cleaned_term_alpha.isalpha():
+        return False
+
+    # 2. Must meet a higher minimum length (e.g., 3 characters)
+    if len(cleaned_term_alpha) < 3:
+        return False
+
+    # 3. Reject terms with 4 or more identical consecutive letters (e.g., 'dddd', 'aaaa')
+    if re.search(r'([a-z])\1{3,}', cleaned_term_alpha):
+        return False
+
+    return True
 
 
 # --- Routes ---
@@ -45,17 +76,28 @@ def add_rule():
     # Split by commas and clean
     conditions = [c.strip() for c in conditions_input.split(",") if c.strip()]
 
-    # Reject invalid (non-alphabetic) inputs
-    if not conclusion or not conclusion.replace(" ", "").isalpha():
+    # --- STICKTER VALIDATION LOGIC USING is_valid_input_term ---
+
+    # 1. Validate Conclusion
+    if not is_valid_input_term(conclusion):
         return redirect(url_for("home"))
+
+    # 2. Validate Conditions: ensure there is at least one condition
+    if not conditions:
+        return redirect(url_for("home"))
+
+    # 3. Validate each individual condition
     for cond in conditions:
-        if not cond.replace(" ", "").isalpha():
+        if not is_valid_input_term(cond):
             return redirect(url_for("home"))
 
-    if conditions and conclusion:
-        rules = load_rules()
-        rules.append({"if": conditions, "then": conclusion})
-        save_rules(rules)
+    # --- END STICKTER VALIDATION LOGIC ---
+
+    # If all checks pass, save the new rule
+    rules = load_rules()
+    rules.append({"if": conditions, "then": conclusion})
+    save_rules(rules)
+
     return redirect(url_for("home"))
 
 
@@ -81,7 +123,8 @@ def infer():
     while inferred:
         inferred = False
         for r in rules:
-            if all(cond in facts for cond in r["if"]) and r["then"] not in facts:
+            if all(cond in facts
+                   for cond in r["if"]) and r["then"] not in facts:
                 facts.append(r["then"])
                 conclusions.add(r["then"])
                 inferred = True
@@ -93,14 +136,15 @@ def infer():
             match_count = sum(cond in facts for cond in r["if"])
             if match_count > 0:
                 prob = int((match_count / len(r["if"])) * 100)
-                if prob >= 30:
+                if prob >= 30:  # Only show probabilities 30% or higher
                     probabilities.append({"disease": r["then"], "prob": prob})
 
-    return render_template(
-        "index.html",
-        rules=rules,
-        results={"conclusions": list(conclusions), "probabilities": probabilities}
-    )
+    return render_template("index.html",
+                           rules=rules,
+                           results={
+                               "conclusions": list(conclusions),
+                               "probabilities": probabilities
+                           })
 
 
 if __name__ == "__main__":

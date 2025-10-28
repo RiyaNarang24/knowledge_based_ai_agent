@@ -1,5 +1,4 @@
-# knowledge_based_ai_agent
-3rd year AI project
+
 # Knowledge-Based AI Agent using Propositional Logic 🧠
 
 This project demonstrates how a simple **AI reasoning system** can make logical inferences using stored knowledge and propositional rules.  

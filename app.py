@@ -1,109 +1,107 @@
 from flask import Flask, render_template, request, redirect, url_for
-import tensorflow as tf
-import numpy as np
-from tensorflow.keras.preprocessing import image
-import os
+import json, os, re
 
 app = Flask(__name__)
 
-# -------------------------------
-# 📘 RULE-BASED SYSTEM
-# -------------------------------
-rules = [
-    {"if": ["sneezing", "cough", "cold"], "then": "flu"},
-    {"if": ["fever", "body pain"], "then": "viral infection"},
-    {"if": ["headache", "nausea"], "then": "migraine"},
-    {"if": ["rash", "itching"], "then": "allergy"},
-    {"if": ["tiredness", "weakness"], "then": "fatigue"}
-]
+RULES_FILE = "rules.json"
 
-# Helper function for reasoning
-def infer_from_rules(facts):
-    conclusions = set()
-    for rule in rules:
-        if all(cond in facts for cond in rule["if"]):
-            conclusions.add(rule["then"])
-    return list(conclusions)
 
-# -------------------------------
-# 🧠 CNN IMAGE-BASED DETECTOR
-# -------------------------------
-# Load your trained CNN model
-MODEL_PATH = "disease_model.h5"
-cnn_model = None
-class_labels = ['covid', 'malaria', 'normal', 'pneumonia', 'tuberculosis']  # update this after training
+# --- Helper functions ---
+def load_rules():
+    if os.path.exists(RULES_FILE):
+        with open(RULES_FILE, "r") as f:
+            return json.load(f)
+    return [
+        {"if": ["sneezing", "cough", "cold"], "then": "flu"},
+        {"if": ["fever", "body pain"], "then": "viral infection"},
+        {"if": ["headache", "nausea"], "then": "migraine"},
+        {"if": ["rash", "itching"], "then": "allergy"},
+        {"if": ["tiredness", "weakness"], "then": "fatigue"}
+    ]
 
-if os.path.exists(MODEL_PATH):
-    cnn_model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ CNN Model loaded successfully.")
-else:
-    print("⚠️ CNN model not found. Only rule-based diagnosis will work.")
 
-def predict_image(img_path):
-    """Predict disease from uploaded image."""
-    try:
-        img = image.load_img(img_path, target_size=(128, 128))
-        x = image.img_to_array(img)
-        x = np.expand_dims(x, axis=0)
-        x = x / 255.0
+def save_rules(rules):
+    with open(RULES_FILE, "w") as f:
+        json.dump(rules, f, indent=4)
 
-        preds = cnn_model.predict(x)[0]
-        class_idx = np.argmax(preds)
-        confidence = round(preds[class_idx] * 100, 2)
-        return class_labels[class_idx], confidence
-    except Exception as e:
-        print("Error predicting image:", e)
-        return None, 0
 
-# -------------------------------
-# 🌐 ROUTES
-# -------------------------------
-@app.route('/')
-def index():
-    return render_template('index.html', rules=rules, results=None)
+def clean_text(text):
+    """Allow only letters and spaces"""
+    return re.sub(r'[^a-zA-Z\s,]', '', text).strip()
 
-@app.route('/add_rule', methods=['POST'])
+
+# --- Routes ---
+@app.route("/")
+def home():
+    rules = load_rules()
+    return render_template("index.html", rules=rules, results=None)
+
+
+@app.route("/add_rule", methods=["POST"])
 def add_rule():
-    conditions = request.form.get('conditions', '').lower().split(',')
-    conclusion = request.form.get('conclusion', '').strip().lower()
-    conditions = [c.strip() for c in conditions if c.strip().isalpha()]
+    conditions_input = clean_text(request.form.get("conditions", "").lower())
+    conclusion = clean_text(request.form.get("conclusion", "").lower())
 
-    if conditions and conclusion.isalpha():
+    # Split by commas and clean
+    conditions = [c.strip() for c in conditions_input.split(",") if c.strip()]
+
+    # Reject invalid (non-alphabetic) inputs
+    if not conclusion or not conclusion.replace(" ", "").isalpha():
+        return redirect(url_for("home"))
+    for cond in conditions:
+        if not cond.replace(" ", "").isalpha():
+            return redirect(url_for("home"))
+
+    if conditions and conclusion:
+        rules = load_rules()
         rules.append({"if": conditions, "then": conclusion})
-    return redirect(url_for('index'))
+        save_rules(rules)
+    return redirect(url_for("home"))
 
-@app.route('/delete_rule/<int:index>', methods=['POST'])
+
+@app.route("/delete_rule/<int:index>", methods=["POST"])
 def delete_rule(index):
+    rules = load_rules()
     if 0 <= index < len(rules):
-        rules.pop(index)
-    return redirect(url_for('index'))
+        del rules[index]
+        save_rules(rules)
+    return redirect(url_for("home"))
 
-@app.route('/infer', methods=['POST'])
+
+@app.route("/infer", methods=["POST"])
 def infer():
-    user_facts = request.form.get('facts', '').lower().split(',')
-    user_facts = [f.strip() for f in user_facts if f.strip().isalpha()]
-    conclusions = infer_from_rules(user_facts)
-    image_result = None
-    confidence = None
+    facts_input = clean_text(request.form.get("facts", "").lower())
+    facts = [f.strip() for f in facts_input.split(",") if f.strip()]
+    rules = load_rules()
 
-    # Handle uploaded image
-    if 'image' in request.files:
-        file = request.files['image']
-        if file and file.filename != '':
-            path = os.path.join("static", file.filename)
-            file.save(path)
-            if cnn_model:
-                image_result, confidence = predict_image(path)
+    conclusions = set()
+    inferred = True
 
-    final_result = conclusions.copy()
-    if image_result:
-        final_result.append(f"{image_result} ({confidence}% confidence)")
+    # Forward chaining
+    while inferred:
+        inferred = False
+        for r in rules:
+            if all(cond in facts for cond in r["if"]) and r["then"] not in facts:
+                facts.append(r["then"])
+                conclusions.add(r["then"])
+                inferred = True
 
-    return render_template('index.html', rules=rules,
-                           results={'conclusions': final_result})
+    # Probability if no match
+    probabilities = []
+    if not conclusions:
+        for r in rules:
+            match_count = sum(cond in facts for cond in r["if"])
+            if match_count > 0:
+                prob = int((match_count / len(r["if"])) * 100)
+                if prob >= 30:
+                    probabilities.append({"disease": r["then"], "prob": prob})
 
-# -------------------------------
-# 🚀 RUN APP
-# -------------------------------
-if __name__ == '__main__':
+    return render_template(
+        "index.html",
+        rules=rules,
+        results={"conclusions": list(conclusions), "probabilities": probabilities}
+    )
+
+
+if __name__ == "__main__":
     app.run(debug=True)

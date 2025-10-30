@@ -1,4 +1,4 @@
-# streamlit_app.py (paste/replace entire file with this)
+# streamlit_app.py
 import streamlit as st
 import json, os, re
 from typing import List
@@ -28,6 +28,7 @@ def save_rules(rules: List[dict]):
 def clean_text(text: str) -> str:
     if not text:
         return ""
+    # allow letters, commas and spaces; lowercase everything
     return re.sub(r"[^a-zA-Z,\s]", "", text).strip().lower()
 
 def has_vowel(s: str) -> bool:
@@ -35,13 +36,16 @@ def has_vowel(s: str) -> bool:
 
 def is_valid_term(term: str) -> bool:
     t = term.strip()
+    # must be at least 3 characters
     if len(t) < 3:
         return False
+    # must be alphabetic (spaces allowed between words)
     if not t.replace(" ", "").isalpha():
         return False
-    # reject three+ repeated identical characters (e.g., 'aaaa' or 'jjj')
+    # reject three or more identical consecutive characters (e.g., 'aaaa' or 'jjj')
     if re.search(r"(.)\1{2,}", t.replace(" ", "")):
         return False
+    # require at least one vowel (to avoid pure consonant gibberish)
     if not has_vowel(t):
         return False
     return True
@@ -54,6 +58,7 @@ def forward_chain(rules, facts):
     while changed:
         changed = False
         for r in rules:
+            # rule's preconditions must all be present in facts
             if all(cond in facts for cond in r["if"]) and r["then"] not in facts:
                 facts.append(r["then"])
                 conclusions.add(r["then"])
@@ -71,6 +76,7 @@ def get_probabilities(rules, facts):
     return sorted(probs, key=lambda x: x["prob"], reverse=True)
 
 def speak(text: str):
+    # Use safe JSON-encoded string inside a tiny HTML/JS component
     safe = json.dumps(text)
     st.components.v1.html(f"""
       <script>
@@ -89,10 +95,10 @@ def speak(text: str):
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
 st.markdown("""
 <style>
-/* hide Streamlit header, menu, footer, toolbar and common top rounded placeholder */
-header, footer, [data-testid="stToolbar"], div[role="banner"], nav[aria-label], .css-1kyxreq, .css-1y4p8pa, .css-1n76uvr { display: none !important; }
+/* hide Streamlit header, menu, footer and some top placeholders */
+header, footer, [data-testid="stToolbar"], nav[aria-label], .css-1kyxreq, .css-1y4p8pa, .css-1n76uvr { display: none !important; }
 .block-container { padding-top: 0rem !important; }
-/* style the main content box to resemble your HTML look */
+/* main container that looks like your HTML design */
 .main-box {
   max-width: 980px;
   margin: 18px auto;
@@ -111,12 +117,29 @@ st.markdown('<div class="main-box">', unsafe_allow_html=True)
 st.markdown("<h1 style='text-align:center;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center;color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
 
-# load rules
+# load rules (fresh each run)
 rules = load_rules()
 
-# ---------- Add rule form (put it above rules so new rules can be shown immediately) ----------
+# ---------- Known Rules (appear first) ----------
+st.markdown("### 🧩 Known Rules")
+if not rules:
+    st.info("No rules found yet.")
+else:
+    for i, r in enumerate(rules):
+        left, right = st.columns([0.82, 0.18])
+        left.markdown(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
+        if right.button("❌ Delete", key=f"del_{i}"):
+            rules.pop(i)
+            save_rules(rules)
+            st.success("Rule deleted.")
+            # reload rules so UI below reflects change
+            rules = load_rules()
+
+st.markdown("---")
+
+# ---------- Add rule form ----------
 st.markdown("### 💡 Add a New Rule")
-with st.form("add_rule"):
+with st.form("add_rule", clear_on_submit=False):
     conds = st.text_input("If parts (comma separated):")
     concl = st.text_input("Then part:")
     submit_add = st.form_submit_button("Add Rule")
@@ -137,25 +160,9 @@ with st.form("add_rule"):
                 rules.append({"if": conditions, "then": concl_clean})
                 save_rules(rules)
                 st.success("✅ Rule added successfully.")
-                # reload rules variable so UI below shows it immediately (no rerun needed)
                 rules = load_rules()
 
-# ---------- Rules list & delete ----------
-st.markdown("### 🧩 Known Rules")
-if not rules:
-    st.info("No rules found yet.")
-else:
-    # display each rule with a Delete button right-aligned
-    for i, r in enumerate(rules):
-        left, right = st.columns([0.82, 0.18])
-        left.write(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
-        if right.button("❌ Delete", key=f"del_{i}"):
-            # remove and save immediately, reload rules to update UI
-            rules.pop(i)
-            save_rules(rules)
-            st.success("Rule deleted.")
-            # reload local rules variable so the rest of the rendering sees update
-            rules = load_rules()
+st.markdown("---")
 
 # ---------- Inference ----------
 st.markdown("### 🧠 Ask the AI")
@@ -185,9 +192,12 @@ if infer_submit:
             speak("No condition found. Try different symptoms.")
 
 # optional link to Pneumonia Detection App
-st.markdown("""<p style='text-align:center;margin-top:18px;'>
-<a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
-<button style="padding:10px 18px; border-radius:8px;">Go to Pneumonia Detection App</button></a>
-</p>""", unsafe_allow_html=True)
+st.markdown("""
+<p style='text-align:center;margin-top:18px;'>
+  <a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
+    <button style="padding:10px 18px; border-radius:8px;">Go to Pneumonia Detection App</button>
+  </a>
+</p>
+""", unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)

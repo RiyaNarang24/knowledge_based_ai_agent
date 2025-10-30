@@ -168,17 +168,36 @@
       window.speechSynthesis.speak(msg);
     </script>
 
-    {% else %}
-    <div class="result">No condition found. Try different symptoms.</div>
-    <script>
-      const msg = new SpeechSynthesisUtterance("No condition found. Try different symptoms.");
-      window.speechSynthesis.speak(msg);
-    </script>
-    {% endif %}
-    {% endif %}
+{% else %}
+<div class="result">No condition found. Try different symptoms.</div>
+<script>
+  const msg = new SpeechSynthesisUtterance("No condition found. Try different symptoms.");
+  window.speechSynthesis.speak(msg);
+</script>
+{% endif %}
+
+{% if results.explanation %}
+  <h4>Explanation</h4>
+  <ol>
+    {% for s in results.explanation %}
+      <li>{{ s }}</li>
+    {% endfor %}
+  </ol>
+{% endif %}
+</div>
+{% endif %}
+</section>
+
+<a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
+  <button style="padding:10px 20px; background-color:#4CAF50; color:white; border:none; border-radius:6px;">
+    Go to Pneumonia Detection App
+  </button>
+</a>
+
 
     <footer>🩺 Student Project — Simple AI Health Assistant</footer>
   </div>
+
 </body>
 
 </html>

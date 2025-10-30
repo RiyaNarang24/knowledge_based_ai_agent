@@ -1,10 +1,10 @@
 import streamlit as st
-import json, os, re, html
+import json, os, re
 from typing import List
 
 RULES_FILE = "rules.json"
 
-# ---------- Data Utilities ----------
+# ----------------- Utility Functions -----------------
 def load_rules() -> List[dict]:
     if os.path.exists(RULES_FILE):
         try:
@@ -36,7 +36,7 @@ def is_valid_term(term: str) -> bool:
         and not re.search(r"(.)\1{2,}", term)
     )
 
-# ---------- Inference Logic ----------
+# ----------------- Inference -----------------
 def forward_chain(rules, facts):
     facts = facts[:]
     conclusions = set()
@@ -69,30 +69,28 @@ def speak(text):
         </script>
     """, height=0)
 
-# ---------- Page Layout ----------
+# ----------------- UI Settings -----------------
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
 
-# Remove top white space
-hide_top_bar = """
-<style>
-#MainMenu {visibility: hidden;}
-header {visibility: hidden;}
-footer {visibility: hidden;}
-section[data-testid="stSidebar"] {background-color: transparent;}
-</style>
-"""
-st.markdown(hide_top_bar, unsafe_allow_html=True)
+# hide top white area completely
+st.markdown("""
+    <style>
+    header {display:none !important;}
+    #MainMenu {visibility:hidden;}
+    footer {visibility:hidden;}
+    div[data-testid="stToolbar"] {display:none;}
+    div[data-testid="stDecoration"] {display:none;}
+    </style>
+""", unsafe_allow_html=True)
 
-# Background & container styling
-page_bg = """
+st.markdown("""
 <style>
 body {
   font-family: 'Segoe UI', Tahoma, sans-serif;
   background: linear-gradient(to right, #e3f2fd, #ffffff);
 }
 div[data-testid="stAppViewContainer"] > section:first-child {
-  background: none;
-  padding-top: 0rem;
+  padding-top: 0rem !important;
 }
 .main-container {
   max-width: 800px;
@@ -112,10 +110,9 @@ button:hover {
   background-color: #0d47a1 !important;
 }
 </style>
-"""
-st.markdown(page_bg, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ---------- Main App ----------
+# ----------------- MAIN APP -----------------
 st.markdown('<div class="main-container">', unsafe_allow_html=True)
 st.markdown("<h1 style='text-align:center; color:#1565c0;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center; color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
@@ -133,7 +130,7 @@ else:
         if col2.button("❌ Delete", key=f"del_{i}"):
             del rules[i]
             save_rules(rules)
-            st.rerun()   # ✅ replaced experimental_rerun
+            st.rerun()
 
 # ---------- Add Rule ----------
 st.markdown("### 💡 Add a New Rule")
@@ -150,13 +147,16 @@ with st.form("add_rule_form"):
         else:
             conditions = [c.strip() for c in conds_clean.split(",") if c.strip()]
             all_terms = conditions + [concl_clean]
-            if all(is_valid_term(t) for t in all_terms):
+
+            # ✅ Reject junk terms like "jhhk" or "bhkbk"
+            valid_terms = [t for t in all_terms if is_valid_term(t)]
+            if len(valid_terms) != len(all_terms):
+                st.error("❌ Invalid rule. Use meaningful alphabetic words (≥3 letters, no repeats).")
+            else:
                 rules.append({"if": conditions, "then": concl_clean})
                 save_rules(rules)
                 st.success("✅ Rule added successfully!")
                 st.rerun()
-            else:
-                st.error("❌ Invalid rule. Use meaningful alphabetic words (≥3 letters, no repeats).")
 
 # ---------- Inference ----------
 st.markdown("### 🧠 Ask the AI")
@@ -188,14 +188,4 @@ if infer:
             st.info("No condition found. Try different symptoms.")
             speak("No condition found. Try different symptoms.")
 
-# ---------- Link to Pneumonia App ----------
-st.markdown("""
-<a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
-  <button style="padding:10px 20px; background-color:#4CAF50; color:white; border:none; border-radius:6px;">
-    Go to Pneumonia Detection App
-  </button>
-</a>
-""", unsafe_allow_html=True)
-
-st.markdown("<footer style='text-align:center; color:gray; margin-top:20px;'>🩺 Student Project — Simple AI Health Assistant</footer>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)

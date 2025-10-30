@@ -5,7 +5,7 @@ import os
 # --- File to store rules ---
 RULES_FILE = "rules.json"
 
-# --- Load and Save Functions ---
+# --- Load & Save functions ---
 def load_rules():
     if os.path.exists(RULES_FILE):
         with open(RULES_FILE, "r") as f:
@@ -16,10 +16,20 @@ def save_rules(rules):
     with open(RULES_FILE, "w") as f:
         json.dump(rules, f, indent=2)
 
-# --- Page Config ---
+# --- Helper function for probability-based matching ---
+def find_probable_conditions(rules, facts):
+    results = []
+    for rule in rules:
+        match_count = sum(1 for cond in rule["if"] if cond.lower() in facts)
+        if match_count > 0:
+            prob = int((match_count / len(rule["if"])) * 100)
+            results.append({"disease": rule["then"], "prob": prob})
+    results.sort(key=lambda x: x["prob"], reverse=True)
+    return [r for r in results if r["prob"] >= 30]  # only show >=30% matches
+
+# --- Streamlit page setup ---
 st.set_page_config(page_title="Smart Health Knowledge Agent", page_icon="🤖", layout="centered")
 
-# --- Header ---
 st.markdown(
     "<h1 style='text-align:center;color:#1565c0;'>Smart Health Knowledge Agent 🤖</h1>",
     unsafe_allow_html=True,
@@ -32,8 +42,8 @@ st.markdown(
 rules = load_rules()
 
 # --- Show Rules ---
+st.subheader("🧩 Known Rules")
 if rules:
-    st.subheader("🧩 Known Rules")
     for i, r in enumerate(rules):
         col1, col2 = st.columns([6, 1])
         with col1:
@@ -44,49 +54,47 @@ if rules:
                 save_rules(rules)
                 st.rerun()
 else:
-    st.info("No rules found yet. Add some below!")
+    st.info("No rules yet. Add one below!")
 
-# --- Add New Rule ---
+# --- Add Rule ---
 st.subheader("💡 Add a New Rule")
-with st.form("add_rule_form"):
+with st.form("add_rule"):
     conditions = st.text_input("If parts (comma separated):")
     conclusion = st.text_input("Then part:")
-    add_btn = st.form_submit_button("Add Rule")
+    submitted = st.form_submit_button("Add Rule")
 
-if add_btn:
-    # 🛡️ Validation for empty or junk input
+if submitted:
     if not conditions.strip() or not conclusion.strip():
-        st.warning("⚠️ Please enter both 'If' and 'Then' parts.")
-    elif any(not part.strip().isalpha() for part in conclusion.split()):
-        st.error("❌ Please use only letters for your rule (no numbers or symbols).")
+        st.warning("⚠️ Please fill both fields.")
+    elif any(char.isdigit() or not char.isalpha() for char in conclusion.strip()):
+        st.error("❌ Please use only letters in your rule conclusion.")
+    elif any(len(word.strip()) < 2 for word in conditions.split(",")):
+        st.error("⚠️ Invalid or too short conditions.")
     else:
         rules.append({"if": [c.strip() for c in conditions.split(",")], "then": conclusion.strip()})
         save_rules(rules)
         st.success("✅ Rule added successfully!")
         st.rerun()
 
-# --- Infer Section ---
+# --- Inference Section ---
 st.subheader("🧠 Ask the AI")
-facts = st.text_input("Enter symptoms (comma separated):")
+facts_input = st.text_input("Enter symptoms (comma separated):")
+
 if st.button("Infer"):
-    if not facts.strip():
-        st.warning("Please enter some symptoms.")
+    if not facts_input.strip():
+        st.warning("Please enter symptoms to infer.")
     else:
-        # Simple inference
-        found = False
+        facts = [f.strip().lower() for f in facts_input.split(",")]
         conclusions = []
-        facts_list = [f.strip().lower() for f in facts.split(",")]
 
+        # Exact match search
         for rule in rules:
-            if all(cond.lower() in facts_list for cond in rule["if"]):
+            if all(cond.lower() in facts for cond in rule["if"]):
                 conclusions.append(rule["then"])
-                found = True
 
-        if found:
-            result_text = f"Possible condition(s): {', '.join(conclusions)}"
+        if conclusions:
+            result_text = f"Possible Condition(s): {', '.join(conclusions)}"
             st.success(result_text)
-
-            # 🎤 Voice output
             st.markdown(
                 f"""
                 <script>
@@ -97,18 +105,37 @@ if st.button("Infer"):
                 unsafe_allow_html=True,
             )
         else:
-            st.error("No condition found. Try different symptoms.")
-            st.markdown(
-                """
-                <script>
-                const msg = new SpeechSynthesisUtterance("No condition found. Try different symptoms.");
-                window.speechSynthesis.speak(msg);
-                </script>
-                """,
-                unsafe_allow_html=True,
-            )
+            probable = find_probable_conditions(rules, facts)
+            if probable:
+                st.warning("No exact match found. Possible conditions based on similarity:")
+                for p in probable:
+                    st.markdown(f"- **{p['disease']}** — {p['prob']}% match")
 
-# --- Pneumonia App Button ---
+                speech_text = "No exact match found. Possible conditions are: "
+                for p in probable:
+                    speech_text += f"{p['disease']} with {p['prob']} percent probability. "
+                st.markdown(
+                    f"""
+                    <script>
+                    const msg = new SpeechSynthesisUtterance("{speech_text}");
+                    window.speechSynthesis.speak(msg);
+                    </script>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.error("No condition found. Try different symptoms.")
+                st.markdown(
+                    """
+                    <script>
+                    const msg = new SpeechSynthesisUtterance("No condition found. Try different symptoms.");
+                    window.speechSynthesis.speak(msg);
+                    </script>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+# --- Pneumonia Detection App Button ---
 st.markdown(
     """
     <div style="text-align:center; margin-top:30px;">

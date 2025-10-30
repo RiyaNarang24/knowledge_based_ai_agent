@@ -1,8 +1,7 @@
-# streamlit_app.py  -- REPLACE entire file with this
+# streamlit_app.py
 import streamlit as st
 import json, os, re
 from typing import List
-from collections import Counter
 
 RULES_FILE = "rules.json"
 
@@ -29,39 +28,20 @@ def save_rules(rules: List[dict]):
 def clean_text(text: str) -> str:
     if not text:
         return ""
-    # allow letters, commas and spaces; lowercase everything
     return re.sub(r"[^a-zA-Z,\s]", "", text).strip().lower()
 
 def has_vowel(s: str) -> bool:
     return bool(re.search(r"[aeiou]", s))
 
-def too_much_repetition(s: str) -> bool:
-    s2 = s.replace(" ", "")
-    if not s2:
-        return True
-    most_common_count = Counter(s2).most_common(1)[0][1]
-    return (most_common_count / len(s2)) >= 0.6  # >=60% same char -> suspicious
-
 def is_valid_term(term: str) -> bool:
     t = term.strip()
-    # must be at least 3 characters
     if len(t) < 3:
         return False
-    # must be alphabetic (spaces allowed between words)
     if not t.replace(" ", "").isalpha():
         return False
-    # require at least one vowel (to avoid pure consonant gibberish)
-    if not has_vowel(t):
-        return False
-    # must contain at least 2 unique letters (avoid 'aaa' or repeated single char)
-    uniq = set(t.replace(" ", ""))
-    if len(uniq) < 2:
-        return False
-    # reject three or more identical consecutive characters (e.g., 'aaaa' or 'jjj')
     if re.search(r"(.)\1{2,}", t.replace(" ", "")):
         return False
-    # reject if a single character dominates the string (too repetitive)
-    if too_much_repetition(t):
+    if not has_vowel(t):
         return False
     return True
 
@@ -108,10 +88,8 @@ def speak(text: str):
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
 st.markdown("""
 <style>
-/* hide Streamlit header/menu/footer and extra placeholder that can appear at top */
 header, footer, [data-testid="stToolbar"], nav[aria-label], .css-1kyxreq, .css-1y4p8pa, .css-1n76uvr { display: none !important; }
 .block-container { padding-top: 0rem !important; }
-/* main container that looks like your HTML design */
 .main-box {
   max-width: 980px;
   margin: 18px auto;
@@ -130,10 +108,9 @@ st.markdown('<div class="main-box">', unsafe_allow_html=True)
 st.markdown("<h1 style='text-align:center;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center;color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
 
-# load rules
 rules = load_rules()
 
-# ---------- Known Rules (appear first) ----------
+# ---------- Known Rules ----------
 st.markdown("### 🧩 Known Rules")
 if not rules:
     st.info("No rules found yet.")
@@ -141,17 +118,16 @@ else:
     for i, r in enumerate(rules):
         left, right = st.columns([0.82, 0.18])
         left.markdown(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
-        # delete works with one click; we save and immediately rerun to update UI.
         if right.button("❌ Delete", key=f"del_{i}"):
             rules.pop(i)
             save_rules(rules)
-            st.experimental_rerun()
+            st.rerun()  # fixed here
 
 st.markdown("---")
 
-# ---------- Add rule form ----------
+# ---------- Add Rule ----------
 st.markdown("### 💡 Add a New Rule")
-with st.form("add_rule", clear_on_submit=True):
+with st.form("add_rule", clear_on_submit=False):
     conds = st.text_input("If parts (comma separated):")
     concl = st.text_input("Then part:")
     submit_add = st.form_submit_button("Add Rule")
@@ -167,12 +143,12 @@ with st.form("add_rule", clear_on_submit=True):
                 if not is_valid_term(t):
                     invalid.append(t)
             if invalid:
-                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, contain a vowel, not be repetitive. Invalid: " + ", ".join(invalid))
+                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, contain a vowel, and not be repetitive. Invalid: " + ", ".join(invalid))
             else:
                 rules.append({"if": conditions, "then": concl_clean})
                 save_rules(rules)
                 st.success("✅ Rule added successfully.")
-                st.experimental_rerun()
+                st.rerun()  # fixed here
 
 st.markdown("---")
 
@@ -203,7 +179,6 @@ if infer_submit:
             st.info("No condition found. Try different symptoms.")
             speak("No condition found. Try different symptoms.")
 
-# optional link to Pneumonia Detection App
 st.markdown("""
 <p style='text-align:center;margin-top:18px;'>
   <a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">

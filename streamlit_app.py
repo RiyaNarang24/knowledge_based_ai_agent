@@ -1,11 +1,11 @@
-# streamlit_app.py (replace your file with this exact content)
+# streamlit_app.py (paste/replace entire file with this)
 import streamlit as st
 import json, os, re
 from typing import List
 
 RULES_FILE = "rules.json"
 
-# ----------------- Utility Functions -----------------
+# ---------- Helpers ----------
 def load_rules() -> List[dict]:
     if os.path.exists(RULES_FILE):
         try:
@@ -28,29 +28,25 @@ def save_rules(rules: List[dict]):
 def clean_text(text: str) -> str:
     if not text:
         return ""
-    # allow only letters, commas and spaces; lower-case
     return re.sub(r"[^a-zA-Z,\s]", "", text).strip().lower()
 
 def has_vowel(s: str) -> bool:
     return bool(re.search(r"[aeiou]", s))
 
 def is_valid_term(term: str) -> bool:
-    term = term.strip()
-    # 1) minimum length
-    if len(term) < 3:
+    t = term.strip()
+    if len(t) < 3:
         return False
-    # 2) alphabetic (spaces allowed inside multi-word terms)
-    if not term.replace(" ", "").isalpha():
+    if not t.replace(" ", "").isalpha():
         return False
-    # 3) no long repeated characters (e.g., 'aaaa' or 'jjjj')
-    if re.search(r"(.)\1{2,}", term.replace(" ", "")):  # 3 or more repeats
+    # reject three+ repeated identical characters (e.g., 'aaaa' or 'jjj')
+    if re.search(r"(.)\1{2,}", t.replace(" ", "")):
         return False
-    # 4) require at least one vowel — helps block nonsense like "jjhk"
-    if not has_vowel(term):
+    if not has_vowel(t):
         return False
     return True
 
-# ----------------- Inference Helpers -----------------
+# ---------- Inference ----------
 def forward_chain(rules, facts):
     facts = facts[:]
     conclusions = set()
@@ -75,7 +71,6 @@ def get_probabilities(rules, facts):
     return sorted(probs, key=lambda x: x["prob"], reverse=True)
 
 def speak(text: str):
-    # small invisible html to trigger browser speech synthesis
     safe = json.dumps(text)
     st.components.v1.html(f"""
       <script>
@@ -90,89 +85,77 @@ def speak(text: str):
       </script>
     """, height=0)
 
-# ----------------- Page config & CSS (remove top white bar) -----------------
+# ---------- Page config and CSS ----------
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
-
-# Hide streamlit header/toolbar/footer + reduce top spacing
 st.markdown("""
 <style>
-/* hide header, footer, menu */
-header, footer, [data-testid="stToolbar"] {display: none !important;}
-/* remove top extra whitespace and push content up */
-.block-container {padding-top: 0rem !important;}
-/* main visual container style */
+/* hide Streamlit header, menu, footer, toolbar and common top rounded placeholder */
+header, footer, [data-testid="stToolbar"], div[role="banner"], nav[aria-label], .css-1kyxreq, .css-1y4p8pa, .css-1n76uvr { display: none !important; }
+.block-container { padding-top: 0rem !important; }
+/* style the main content box to resemble your HTML look */
 .main-box {
-  max-width: 880px;
-  margin: 24px auto;
-  background: #ffffff;
+  max-width: 980px;
+  margin: 18px auto;
+  background: #fff;
   border-radius: 12px;
   box-shadow: 0 6px 26px rgba(0,0,0,0.06);
-  padding: 28px 28px;
+  padding: 26px;
 }
 h1 { color: #1565c0; font-weight:700; }
 button { background-color: #1565c0 !important; color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- Main UI -----------------
+# ---------- MAIN ----------
 st.markdown('<div class="main-box">', unsafe_allow_html=True)
 st.markdown("<h1 style='text-align:center;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center;color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
 
+# load rules
 rules = load_rules()
+
+# ---------- Add rule form (put it above rules so new rules can be shown immediately) ----------
+st.markdown("### 💡 Add a New Rule")
+with st.form("add_rule"):
+    conds = st.text_input("If parts (comma separated):")
+    concl = st.text_input("Then part:")
+    submit_add = st.form_submit_button("Add Rule")
+    if submit_add:
+        conds_clean = clean_text(conds)
+        concl_clean = clean_text(concl)
+        if not conds_clean or not concl_clean:
+            st.error("Please provide both condition(s) and a conclusion.")
+        else:
+            conditions = [c.strip() for c in conds_clean.split(",") if c.strip()]
+            invalid = []
+            for t in conditions + [concl_clean]:
+                if not is_valid_term(t):
+                    invalid.append(t)
+            if invalid:
+                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, contain a vowel, and not be repetitive. Invalid: " + ", ".join(invalid))
+            else:
+                rules.append({"if": conditions, "then": concl_clean})
+                save_rules(rules)
+                st.success("✅ Rule added successfully.")
+                # reload rules variable so UI below shows it immediately (no rerun needed)
+                rules = load_rules()
 
 # ---------- Rules list & delete ----------
 st.markdown("### 🧩 Known Rules")
 if not rules:
     st.info("No rules found yet.")
 else:
-    # render rules in two columns: text left, Delete button right
+    # display each rule with a Delete button right-aligned
     for i, r in enumerate(rules):
-        c1, c2 = st.columns([0.85, 0.15])
-        c1.write(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
-        # use a unique key for each delete button
-        if c2.button("❌ Delete", key=f"del_{i}"):
-            # mark deletion in session_state so we can mutate list outside the iteration
-            st.session_state["delete_index"] = i
-
-# perform deletion if requested
-if "delete_index" in st.session_state:
-    idx = st.session_state.pop("delete_index")
-    if 0 <= idx < len(rules):
-        rules.pop(idx)
-        save_rules(rules)
-        st.success("Rule deleted.")
-        st.experimental_rerun()
-
-# ---------- Add rule ----------
-st.markdown("### 💡 Add a New Rule")
-with st.form("add_rule"):
-    conds = st.text_input("If parts (comma separated):")
-    concl = st.text_input("Then part:")
-    submit_add = st.form_submit_button("Add Rule")
-
-    if submit_add:
-        conds_clean = clean_text(conds)
-        concl_clean = clean_text(concl)
-
-        # validation checks
-        if not conds_clean or not concl_clean:
-            st.error("Please provide both condition(s) and a conclusion.")
-        else:
-            conditions = [c.strip() for c in conds_clean.split(",") if c.strip()]
-            # check each term with is_valid_term
-            invalid = []
-            for t in conditions + [concl_clean]:
-                if not is_valid_term(t):
-                    invalid.append(t)
-            if invalid:
-                # show friendly message (don't add)
-                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, include a vowel, and not be repetitive. Invalid: " + ", ".join(invalid))
-            else:
-                rules.append({"if": conditions, "then": concl_clean})
-                save_rules(rules)
-                st.success("✅ Rule added successfully.")
-                st.experimental_rerun()
+        left, right = st.columns([0.82, 0.18])
+        left.write(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
+        if right.button("❌ Delete", key=f"del_{i}"):
+            # remove and save immediately, reload rules to update UI
+            rules.pop(i)
+            save_rules(rules)
+            st.success("Rule deleted.")
+            # reload local rules variable so the rest of the rendering sees update
+            rules = load_rules()
 
 # ---------- Inference ----------
 st.markdown("### 🧠 Ask the AI")
@@ -196,12 +179,12 @@ if infer_submit:
             st.warning("No exact match found. Possible conditions:")
             for p in probs:
                 st.markdown(f"- **{p['disease']}** — {p['prob']}%")
-            speak("No exact match found. Possible conditions are: " + ", ".join([f"{p['disease']} with {p['prob']} percent" for p in probs]))
+            speak("No exact match found. Possible conditions are: " + ", ".join([f"{p['disease']} ({p['prob']} percent)" for p in probs]))
         else:
             st.info("No condition found. Try different symptoms.")
             speak("No condition found. Try different symptoms.")
 
-# optional link to your other app (keeps your choice)
+# optional link to Pneumonia Detection App
 st.markdown("""<p style='text-align:center;margin-top:18px;'>
 <a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
 <button style="padding:10px 18px; border-radius:8px;">Go to Pneumonia Detection App</button></a>

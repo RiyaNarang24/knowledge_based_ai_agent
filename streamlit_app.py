@@ -122,7 +122,10 @@ if st.button("Infer"):
             st.info("No exact match found. Here are possible conditions based on similarity:")
             for p in probabilities:
                 st.write(f"- {p['disease']} — {p['prob']}%")
-            speech_text = "No exact match found. Possible conditions are: " + ", ".join([f\"{p['disease']} with {p['prob']} percent probability\" for p in probabilities])
+           speech_text = "No exact match found. Possible conditions are: " + ", ".join(
+    [f"{p['disease']} with {p['prob']} percent probability" for p in probabilities]
+)
+
             st.markdown(f"<script>speechSynthesis.speak(new SpeechSynthesisUtterance('{speech_text}'));</script>", unsafe_allow_html=True)
         else:
             st.error("No condition found. Try different symptoms.")

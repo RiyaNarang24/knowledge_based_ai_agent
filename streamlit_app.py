@@ -61,7 +61,6 @@ def get_probabilities(rules, facts):
     return sorted(probs, key=lambda x: x["prob"], reverse=True)
 
 def speak(text):
-    safe = html.escape(text)
     st.components.v1.html(f"""
         <script>
         const msg = new SpeechSynthesisUtterance({json.dumps(text)});
@@ -73,6 +72,17 @@ def speak(text):
 # ---------- Page Layout ----------
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
 
+# Remove top white space
+hide_top_bar = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+section[data-testid="stSidebar"] {background-color: transparent;}
+</style>
+"""
+st.markdown(hide_top_bar, unsafe_allow_html=True)
+
 # Background & container styling
 page_bg = """
 <style>
@@ -82,6 +92,7 @@ body {
 }
 div[data-testid="stAppViewContainer"] > section:first-child {
   background: none;
+  padding-top: 0rem;
 }
 .main-container {
   max-width: 800px;
@@ -104,89 +115,87 @@ button:hover {
 """
 st.markdown(page_bg, unsafe_allow_html=True)
 
-with st.container():
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+# ---------- Main App ----------
+st.markdown('<div class="main-container">', unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center; color:#1565c0;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
 
-    st.markdown("<h1 style='text-align:center; color:#1565c0;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
+rules = load_rules()
 
-    rules = load_rules()
+# ---------- Show Rules ----------
+st.markdown("### 🧩 Known Rules")
+if not rules:
+    st.info("No rules found yet.")
+else:
+    for i, r in enumerate(rules):
+        col1, col2 = st.columns([0.85, 0.15])
+        col1.write(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
+        if col2.button("❌ Delete", key=f"del_{i}"):
+            del rules[i]
+            save_rules(rules)
+            st.rerun()   # ✅ replaced experimental_rerun
 
-    # ---------- Show Rules ----------
-    st.markdown("### 🧩 Known Rules")
-    if not rules:
-        st.info("No rules found yet.")
-    else:
-        for i, r in enumerate(rules):
-            col1, col2 = st.columns([0.85, 0.15])
-            col1.write(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
-            if col2.button("❌ Delete", key=f"del_{i}"):
-                del rules[i]
-                save_rules(rules)
-                st.experimental_rerun()
+# ---------- Add Rule ----------
+st.markdown("### 💡 Add a New Rule")
+with st.form("add_rule_form"):
+    conds = st.text_input("If parts (comma separated):")
+    concl = st.text_input("Then part:")
+    submitted = st.form_submit_button("Add Rule")
 
-    # ---------- Add Rule ----------
-    st.markdown("### 💡 Add a New Rule")
-    with st.form("add_rule_form"):
-        conds = st.text_input("If parts (comma separated):")
-        concl = st.text_input("Then part:")
-        submitted = st.form_submit_button("Add Rule")
-
-        if submitted:
-            conds_clean = clean_text(conds)
-            concl_clean = clean_text(concl)
-            if not conds_clean or not concl_clean:
-                st.error("Please fill both conditions and conclusion.")
-            else:
-                conditions = [c.strip() for c in conds_clean.split(",") if c.strip()]
-                all_terms = conditions + [concl_clean]
-                if all(is_valid_term(t) for t in all_terms):
-                    rules.append({"if": conditions, "then": concl_clean})
-                    save_rules(rules)
-                    st.success("✅ Rule added successfully!")
-                    st.experimental_rerun()
-                else:
-                    st.error("❌ Invalid rule. Use meaningful alphabetic words (≥3 letters, no repeats).")
-
-    # ---------- Inference ----------
-    st.markdown("### 🧠 Ask the AI")
-    with st.form("infer_form"):
-        facts_input = st.text_input("Enter symptoms (comma separated):")
-        infer = st.form_submit_button("Infer")
-
-    if infer:
-        facts = [f.strip() for f in clean_text(facts_input).split(",") if f.strip()]
-        if not facts:
-            st.error("Please enter at least one symptom.")
+    if submitted:
+        conds_clean = clean_text(conds)
+        concl_clean = clean_text(concl)
+        if not conds_clean or not concl_clean:
+            st.error("Please fill both conditions and conclusion.")
         else:
-            conclusions = forward_chain(rules, facts)
-            probs = get_probabilities(rules, facts)
-
-            if conclusions:
-                msg = f"You may have {', '.join(conclusions)}"
-                st.success(f"Possible Condition(s): {', '.join(conclusions)}")
-                speak(msg)
-            elif probs:
-                st.warning("No exact match found. Here are possible conditions:")
-                for p in probs:
-                    st.markdown(f"- **{p['disease']}** — {p['prob']}%")
-                msg = "No exact match found. Possible conditions are: " + ", ".join(
-                    [f"{p['disease']} with {p['prob']} percent probability" for p in probs]
-                )
-                speak(msg)
+            conditions = [c.strip() for c in conds_clean.split(",") if c.strip()]
+            all_terms = conditions + [concl_clean]
+            if all(is_valid_term(t) for t in all_terms):
+                rules.append({"if": conditions, "then": concl_clean})
+                save_rules(rules)
+                st.success("✅ Rule added successfully!")
+                st.rerun()
             else:
-                st.info("No condition found. Try different symptoms.")
-                speak("No condition found. Try different symptoms.")
+                st.error("❌ Invalid rule. Use meaningful alphabetic words (≥3 letters, no repeats).")
 
-    # ---------- Button to Pneumonia App ----------
-    st.markdown("""
-    <a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
-      <button style="padding:10px 20px; background-color:#4CAF50; color:white; border:none; border-radius:6px;">
-        Go to Pneumonia Detection App
-      </button>
-    </a>
-    """, unsafe_allow_html=True)
+# ---------- Inference ----------
+st.markdown("### 🧠 Ask the AI")
+with st.form("infer_form"):
+    facts_input = st.text_input("Enter symptoms (comma separated):")
+    infer = st.form_submit_button("Infer")
 
-    st.markdown("<footer style='text-align:center; color:gray; margin-top:20px;'>🩺 Student Project — Simple AI Health Assistant</footer>", unsafe_allow_html=True)
+if infer:
+    facts = [f.strip() for f in clean_text(facts_input).split(",") if f.strip()]
+    if not facts:
+        st.error("Please enter at least one symptom.")
+    else:
+        conclusions = forward_chain(rules, facts)
+        probs = get_probabilities(rules, facts)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        if conclusions:
+            msg = f"You may have {', '.join(conclusions)}"
+            st.success(f"Possible Condition(s): {', '.join(conclusions)}")
+            speak(msg)
+        elif probs:
+            st.warning("No exact match found. Here are possible conditions:")
+            for p in probs:
+                st.markdown(f"- **{p['disease']}** — {p['prob']}%")
+            msg = "No exact match found. Possible conditions are: " + ", ".join(
+                [f"{p['disease']} with {p['prob']} percent probability" for p in probs]
+            )
+            speak(msg)
+        else:
+            st.info("No condition found. Try different symptoms.")
+            speak("No condition found. Try different symptoms.")
+
+# ---------- Link to Pneumonia App ----------
+st.markdown("""
+<a href="https://smarthealthai-ncq7kky52fti3ncpsr73mz.streamlit.app/" target="_blank">
+  <button style="padding:10px 20px; background-color:#4CAF50; color:white; border:none; border-radius:6px;">
+    Go to Pneumonia Detection App
+  </button>
+</a>
+""", unsafe_allow_html=True)
+
+st.markdown("<footer style='text-align:center; color:gray; margin-top:20px;'>🩺 Student Project — Simple AI Health Assistant</footer>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)

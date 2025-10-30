@@ -1,7 +1,8 @@
-# streamlit_app.py
+# streamlit_app.py  -- REPLACE entire file with this
 import streamlit as st
 import json, os, re
 from typing import List
+from collections import Counter
 
 RULES_FILE = "rules.json"
 
@@ -34,6 +35,13 @@ def clean_text(text: str) -> str:
 def has_vowel(s: str) -> bool:
     return bool(re.search(r"[aeiou]", s))
 
+def too_much_repetition(s: str) -> bool:
+    s2 = s.replace(" ", "")
+    if not s2:
+        return True
+    most_common_count = Counter(s2).most_common(1)[0][1]
+    return (most_common_count / len(s2)) >= 0.6  # >=60% same char -> suspicious
+
 def is_valid_term(term: str) -> bool:
     t = term.strip()
     # must be at least 3 characters
@@ -42,11 +50,18 @@ def is_valid_term(term: str) -> bool:
     # must be alphabetic (spaces allowed between words)
     if not t.replace(" ", "").isalpha():
         return False
+    # require at least one vowel (to avoid pure consonant gibberish)
+    if not has_vowel(t):
+        return False
+    # must contain at least 2 unique letters (avoid 'aaa' or repeated single char)
+    uniq = set(t.replace(" ", ""))
+    if len(uniq) < 2:
+        return False
     # reject three or more identical consecutive characters (e.g., 'aaaa' or 'jjj')
     if re.search(r"(.)\1{2,}", t.replace(" ", "")):
         return False
-    # require at least one vowel (to avoid pure consonant gibberish)
-    if not has_vowel(t):
+    # reject if a single character dominates the string (too repetitive)
+    if too_much_repetition(t):
         return False
     return True
 
@@ -58,7 +73,6 @@ def forward_chain(rules, facts):
     while changed:
         changed = False
         for r in rules:
-            # rule's preconditions must all be present in facts
             if all(cond in facts for cond in r["if"]) and r["then"] not in facts:
                 facts.append(r["then"])
                 conclusions.add(r["then"])
@@ -76,7 +90,6 @@ def get_probabilities(rules, facts):
     return sorted(probs, key=lambda x: x["prob"], reverse=True)
 
 def speak(text: str):
-    # Use safe JSON-encoded string inside a tiny HTML/JS component
     safe = json.dumps(text)
     st.components.v1.html(f"""
       <script>
@@ -95,7 +108,7 @@ def speak(text: str):
 st.set_page_config(page_title="Smart Health Knowledge Agent", layout="centered")
 st.markdown("""
 <style>
-/* hide Streamlit header, menu, footer and some top placeholders */
+/* hide Streamlit header/menu/footer and extra placeholder that can appear at top */
 header, footer, [data-testid="stToolbar"], nav[aria-label], .css-1kyxreq, .css-1y4p8pa, .css-1n76uvr { display: none !important; }
 .block-container { padding-top: 0rem !important; }
 /* main container that looks like your HTML design */
@@ -117,7 +130,7 @@ st.markdown('<div class="main-box">', unsafe_allow_html=True)
 st.markdown("<h1 style='text-align:center;'>Smart Health Knowledge Agent 🤖</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align:center;color:#555;'>This mini AI guesses your condition from symptoms. You can teach it new rules too!</p>", unsafe_allow_html=True)
 
-# load rules (fresh each run)
+# load rules
 rules = load_rules()
 
 # ---------- Known Rules (appear first) ----------
@@ -128,18 +141,17 @@ else:
     for i, r in enumerate(rules):
         left, right = st.columns([0.82, 0.18])
         left.markdown(f"If {', '.join(r['if'])} → Then: **{r['then']}**")
+        # delete works with one click; we save and immediately rerun to update UI.
         if right.button("❌ Delete", key=f"del_{i}"):
             rules.pop(i)
             save_rules(rules)
-            st.success("Rule deleted.")
-            # reload rules so UI below reflects change
-            rules = load_rules()
+            st.experimental_rerun()
 
 st.markdown("---")
 
 # ---------- Add rule form ----------
 st.markdown("### 💡 Add a New Rule")
-with st.form("add_rule", clear_on_submit=False):
+with st.form("add_rule", clear_on_submit=True):
     conds = st.text_input("If parts (comma separated):")
     concl = st.text_input("Then part:")
     submit_add = st.form_submit_button("Add Rule")
@@ -155,12 +167,12 @@ with st.form("add_rule", clear_on_submit=False):
                 if not is_valid_term(t):
                     invalid.append(t)
             if invalid:
-                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, contain a vowel, and not be repetitive. Invalid: " + ", ".join(invalid))
+                st.error("Invalid terms detected. Each term must be alphabetic, at least 3 letters, contain a vowel, not be repetitive. Invalid: " + ", ".join(invalid))
             else:
                 rules.append({"if": conditions, "then": concl_clean})
                 save_rules(rules)
                 st.success("✅ Rule added successfully.")
-                rules = load_rules()
+                st.experimental_rerun()
 
 st.markdown("---")
 
